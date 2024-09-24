@@ -1,0 +1,69 @@
+---
+title: "anova"
+format: html
+editor: source
+---
+
+```{r}
+
+if (!require(librarian)){
+  install.packages("librarian")
+  library(librarian)
+}
+
+# librarian downloads, if not already downloaded, and reads in needed packages
+librarian::shelf(tidyverse, here, janitor, vroom, lubridate)
+
+
+
+```
+
+
+
+```{r}
+
+
+# Read the CSV file with vroom
+raw_data <- vroom(here("data", "Closein_Planning_Input_Data_091724.csv")) %>%
+  clean_names() 
+
+# HNL Ramp
+col_select <- raw_data %>% 
+  select( date_value_interval_final, date_time_interval_final, station_1, department, outage_daily_pt_hours, outage_daily_ft_hours) %>% 
+  distinct()
+
+clean_data <- col_select %>% 
+  mutate(date_value_interval_final = mdy(date_value_interval_final),
+         date_time_interval_final = mdy_hms(date_time_interval_final),
+         hour = hour(date_time_interval_final)) %>% 
+  group_by(hour, station_1, department, date_value_interval_final) %>% 
+  mutate(temp_id = cur_group_id()) %>% 
+  filter(!duplicated(temp_id)) %>% 
+  ungroup() %>% 
+  group_by(date_value_interval_final, station_1, department) %>% 
+  mutate(work_hours = max(hour) - min(hour))
+
+sort(colnames(raw_data))
+
+head(clean_data)
+
+#month_year, month_year_2, month, days_in_month, date_time_interval_final
+```
+
+
+
+
+```{r}
+
+# save a numeric vector containing 72 monthly observations
+# from Jan 2009 to Dec 2014 as a time series object
+myts <- ts(myvector, start=c(2009, 1), end=c(2014, 12), frequency=12)
+
+# subset the time series (June 2014 to December 2014)
+myts2 <- window(myts, start=c(2014, 6), end=c(2014, 12))
+
+# plot series
+plot(myts)
+
+```
+
