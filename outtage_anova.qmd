@@ -60,9 +60,8 @@ head(clean_data)
 
 
 
-
+# Models
 ```{r}
-
 anova_result <- aov(outage_perc ~ weekday, data = clean_data)
 
 # Summary of ANOVA
@@ -70,9 +69,37 @@ summary(anova_result)
 
 post_hoc <- TukeyHSD(anova_result)
 print(post_hoc)
+```
 
-plot(post_hoc)
 
+# Tukey figure
+```{r}
+
+
+post_hoc_df <- as.data.frame(post_hoc$weekday)
+
+
+colnames(post_hoc_df)[which(colnames(post_hoc_df) == "p adj")] <- "p.adj"
+
+
+
+post_hoc_df$significant <- post_hoc_df$p.adj < 0.05
+
+
+
+ggplot(post_hoc_df, aes(x = rownames(post_hoc_df), y = diff)) +
+  geom_point(aes(color = significant), size = 3) +  # Highlight points
+  geom_errorbar(aes(ymin = lwr, ymax = upr), width = 0.2) +
+  scale_color_manual(values = c("black", "red"), labels = c("Not Significant", "Significant")) +
+  labs(x = "Comparisons", y = "Difference in Means", color = "Significance") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "blue")
+
+
+```
+# Box plot figure
+```{r}
 
 # Boxplot with significance test
 ggplot(clean_data, aes(x = weekday, y = outage_perc)) +
