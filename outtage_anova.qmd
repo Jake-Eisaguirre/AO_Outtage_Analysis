@@ -12,7 +12,7 @@ if (!require(librarian)){
 }
 
 # librarian downloads, if not already downloaded, and reads in needed packages
-librarian::shelf(tidyverse, here, janitor, vroom, lubridate, ggsignif)
+librarian::shelf(tidyverse, here, janitor, vroom, lubridate, ggsignif, car)
 
 
 
@@ -27,10 +27,13 @@ librarian::shelf(tidyverse, here, janitor, vroom, lubridate, ggsignif)
 raw_data <- vroom(here("data", "Closein_Planning_Input_Data_091724.csv")) %>%
   clean_names() 
 
+department <- c("RAMP")
+station <- c("HNL")
+
 # HNL Ramp
 col_select <- raw_data %>% 
   select( date_value_interval_final, station_1, department, outage_count, resource_daily, outage_daily) %>% 
-  filter(station_1 == "HNL",
+  filter(station_1  == "HNL",
          department == "RAMP")
 
 # outage_daily outage_daily_pt_hours, outage_daily_ft_hours, date_time_interval_final
@@ -67,6 +70,54 @@ anova_result <- aov(outage_perc ~ weekday, data = clean_data)
 # Summary of ANOVA
 summary(anova_result)
 
+```
+
+# assumption check
+```{r}
+residuals <- residuals(anova_result)
+qqnorm(residuals)
+qqline(residuals)
+
+hist(residuals, main = "Histogram of Residuals", xlab = "Residuals")
+
+
+leveneTest(outage_perc ~ weekday, data = clean_data)
+
+ggplot(clean_data, aes(x = weekday, y = outage_perc)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of Outage Percentage by Weekday")
+
+
+
+
+cooks_distances <- cooks.distance(anova_result)
+plot(cooks_distances, main = "Cook's Distance", ylab = "Distance", xlab = "Observation Index")
+abline(h = 4 / length(cooks_distances), col = "red")
+
+
+# Define the threshold
+threshold <- 4 / length(cooks_distances)
+
+# Identify influential points
+influential_points <- which(cooks_distances > threshold)
+
+clean_data_no_influential <- clean_data[-influential_points, ]
+
+```
+
+# Outliers removed
+```{r}
+
+anova_result <- aov(outage_perc ~ weekday, data = clean_data_no_influential)
+
+# Summary of the new model
+summary(anova_result)
+
+```
+
+
+Tukey test
+```{r}
 post_hoc <- TukeyHSD(anova_result)
 print(post_hoc)
 ```
@@ -94,22 +145,51 @@ ggplot(post_hoc_df, aes(x = rownames(post_hoc_df), y = diff)) +
   labs(x = "Comparisons", y = "Difference in Means", color = "Significance") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "blue")
+  geom_hline(yintercept = 0, linetype = "dashed", color = "blue") +
+  ggtitle(paste("Tukey for",department,"at", station))
 
+ggsave(here(paste0("figures/tukey_", department,"_at_", station,".jpeg")))
 
 ```
 # Box plot figure
 ```{r}
+# Box plot figure
+significant_comparisons <- post_hoc_df[post_hoc_df$p.adj < 0.05, ]
+
+# Extract the comparison names (row names)
+comparison_names <- rownames(significant_comparisons)
+
+# Split the comparison names into a list of character vectors
+comparisons_list <- strsplit(comparison_names, "-")
+
+# Create a named vector for easier access to colors
+comparison_colors <- setNames(comparison_color_df$color, comparison_color_df$comparison)
+
+# Get the maximum outage percentage to set y positions for significance labels
+max_y <- max(clean_data_no_influential$outage_perc, na.rm = TRUE)
+
+# Set y positions for significance lines slightly above the maximum y value
+y_positions <- seq(max_y + 1, by = 2, length.out = length(comparisons_list))
 
 # Boxplot with significance test
-ggplot(clean_data, aes(x = weekday, y = outage_perc)) +
+ggplot(clean_data_no_influential, aes(x = weekday, y = outage_perc)) +
   geom_boxplot() +
   geom_jitter(width = 0.2, alpha = 0.6) +
-  labs(title = "Outage Percentage by Weekday for RAMP at HNL", x = "Weekday", y = "Outage Percentage") +
+  labs(title = paste("Outage Percentage by Weekday for", department, "at", station), 
+       x = "Weekday", 
+       y = "Outage Percentage") +
   theme_minimal() +
-  geom_signif(comparisons = list(c("Sat", "Tue")),
-              map_signif_level = TRUE) +
-  geom_hline(yintercept = 24.3, color = "red", linetype = "dashed") 
+  geom_signif(comparisons = comparisons_list,
+              map_signif_level = TRUE,
+              textsize = 3,
+              y_position = y_positions) +  # Set jittered y positions for significance
+  geom_hline(yintercept = 24.3, color = "red", linetype = "dashed") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Save the figure
+ggsave(here(paste0("figures/boxplot_", department, "_at_", station, ".jpeg")))
+
+
 
 ```
 
