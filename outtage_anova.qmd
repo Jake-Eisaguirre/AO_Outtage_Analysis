@@ -192,7 +192,7 @@ ggplot(clean_data_no_influential, aes(x = weekday, y = outage_perc)) +
         legend.key.size = unit(0.5, "cm"),  # Adjust legend key size
         legend.text = element_text(size = 7)) +
   stat_summary(fun = median, geom = "text", aes(label = round(..y.., 1)), 
-               position = position_nudge(x = 0.46), vjust = -0.1, color = "black", size = 2)   # Optional: adjust legend text size
+               position = position_nudge(x = 0.47), vjust = -0.1, color = "black", size = 2)   # Optional: adjust legend text size
 
 
 # Save the figure
@@ -286,7 +286,7 @@ ggplot(post_hoc_df, aes(x = rownames(post_hoc_df), y = diff)) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "blue") +
   ggtitle(paste("Tukey for",department,"at", station))
 
-ggsave(here(paste0("figures/tukey_", department,"_at_", station,".jpeg")))
+#ggsave(here(paste0("figures/tukey_", department,"_at_", station,".jpeg")))
 
 ```
 ## Box plot figure
