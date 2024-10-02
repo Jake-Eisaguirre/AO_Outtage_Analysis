@@ -28,13 +28,13 @@ raw_data <- vroom(here("data", "Closein_Planning_Input_Data_091724.csv")) %>%
   clean_names() 
 
 department <- c("RAMP")
-station <- c("OGG")
+station <- c("HNL")
 
 # HNL Ramp
 col_select <- raw_data %>% 
   select( date_value_interval_final, station_1, department, outage_count, resource_daily, outage_daily,
           resource_hours, outage_hour) %>% 
-  filter(station_1  == "OGG",
+  filter(station_1  == "HNL",
          department == "RAMP")
 
 # outage_daily outage_daily_pt_hours, outage_daily_ft_hours, date_time_interval_final
@@ -46,10 +46,14 @@ clean_data <- col_select %>%
   filter(!duplicated(temp_id)) %>% 
   ungroup() %>% 
   mutate(outage_perc = (outage_hour / (resource_hours + outage_hour)) * 100,
-         weekday = factor(wday(date_value_interval_final, label = T))) %>% 
+         weekday = factor(wday(date_value_interval_final, label = T),
+                          levels = c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")),
+         wd_wend = if_else(weekday %in% c("Fri", "Sat", "Sun"), "weekend", "weekday")) %>% 
   group_by(station_1, department, date_value_interval_final) %>% 
   reframe(outage_perc = mean(outage_perc),
-          weekday=weekday)
+          weekday = weekday,
+          wd_wend = wd_wend)
+
 
 
 sort(colnames(raw_data))
@@ -64,7 +68,7 @@ head(clean_data)
 
 
 
-# Models
+## Models - Day of Week
 ```{r}
 anova_result <- aov(outage_perc ~ weekday, data = clean_data)
 
@@ -73,7 +77,7 @@ summary(anova_result)
 
 ```
 
-# assumption check
+## assumption check
 ```{r}
 residuals <- residuals(anova_result)
 qqnorm(residuals)
@@ -106,7 +110,7 @@ clean_data_no_influential <- clean_data[-influential_points, ]
 
 ```
 
-# Outliers removed
+## Outliers removed
 ```{r}
 
 anova_result <- aov(outage_perc ~ weekday, data = clean_data_no_influential)
@@ -117,14 +121,14 @@ summary(anova_result)
 ```
 
 
-Tukey test
+## Tukey test
 ```{r}
 post_hoc <- TukeyHSD(anova_result)
 print(post_hoc)
 ```
 
 
-# Tukey figure
+## Tukey figure
 ```{r}
 
 
@@ -152,7 +156,7 @@ ggplot(post_hoc_df, aes(x = rownames(post_hoc_df), y = diff)) +
 ggsave(here(paste0("figures/tukey_", department,"_at_", station,".jpeg")))
 
 ```
-# Box plot figure
+## Box plot figure
 ```{r}
 # Box plot figure
 significant_comparisons <- post_hoc_df[post_hoc_df$p.adj < 0.05, ]
@@ -162,6 +166,9 @@ comparison_names <- rownames(significant_comparisons)
 
 # Get the maximum outage percentage to set y positions for significance labels
 max_y <- max(clean_data_no_influential$outage_perc, na.rm = TRUE)
+
+# Split the comparison names into a list of character vectors
+comparisons_list <- strsplit(comparison_names, "-")
 
 # Set y positions for significance lines slightly above the maximum y value
 y_positions <- seq(max_y + 1, by = 2, length.out = length(comparisons_list))
@@ -192,4 +199,134 @@ ggsave(here(paste0("figures/boxplot_", department, "_at_", station, ".jpeg")))
 
 
 ```
+## Models - Day weekend/week
+```{r}
+anova_result <- aov(outage_perc ~ wd_wend, data = clean_data)
 
+# Summary of ANOVA
+summary(anova_result)
+
+```
+
+## assumption check
+```{r}
+residuals <- residuals(anova_result)
+qqnorm(residuals)
+qqline(residuals)
+
+hist(residuals, main = "Histogram of Residuals", xlab = "Residuals")
+
+
+leveneTest(outage_perc ~ weekday, data = clean_data)
+
+ggplot(clean_data, aes(x = weekday, y = outage_perc)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of Outage Percentage by Weekday")
+
+
+
+
+cooks_distances <- cooks.distance(anova_result)
+plot(cooks_distances, main = "Cook's Distance", ylab = "Distance", xlab = "Observation Index")
+abline(h = 4 / length(cooks_distances), col = "red")
+
+
+# Define the threshold
+threshold <- 4 / length(cooks_distances)
+
+# Identify influential points
+influential_points <- which(cooks_distances > threshold)
+
+clean_data_no_influential <- clean_data[-influential_points, ]
+
+```
+
+## Outliers removed
+```{r}
+
+anova_result <- aov(outage_perc ~ wd_wend, data = clean_data_no_influential)
+
+# Summary of the new model
+summary(anova_result)
+
+```
+
+
+## Tukey test
+```{r}
+post_hoc <- TukeyHSD(anova_result)
+print(post_hoc)
+```
+
+
+## Tukey figure
+```{r}
+
+
+post_hoc_df <- as.data.frame(post_hoc$wd_wend)
+
+
+colnames(post_hoc_df)[which(colnames(post_hoc_df) == "p adj")] <- "p.adj"
+
+
+
+post_hoc_df$significant <- post_hoc_df$p.adj < 0.05
+
+
+
+ggplot(post_hoc_df, aes(x = rownames(post_hoc_df), y = diff)) +
+  geom_point(aes(color = significant), size = 3) +  # Highlight points
+  geom_errorbar(aes(ymin = lwr, ymax = upr), width = 0.2) +
+  scale_color_manual(values = c("black", "red"), labels = c("Not Significant", "Significant")) +
+  labs(x = "Comparisons", y = "Difference in Means", color = "Significance") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "blue") +
+  ggtitle(paste("Tukey for",department,"at", station))
+
+ggsave(here(paste0("figures/tukey_", department,"_at_", station,".jpeg")))
+
+```
+## Box plot figure
+```{r}
+# Box plot figure
+significant_comparisons <- post_hoc_df[post_hoc_df$p.adj < 0.05, ]
+
+# Extract the comparison names (row names)
+comparison_names <- rownames(significant_comparisons)
+
+# Get the maximum outage percentage to set y positions for significance labels
+max_y <- max(clean_data_no_influential$outage_perc, na.rm = TRUE)
+
+# Split the comparison names into a list of character vectors
+comparisons_list <- strsplit(comparison_names, "-")
+
+# Set y positions for significance lines slightly above the maximum y value
+y_positions <- seq(max_y + 1, by = 2, length.out = length(comparisons_list))
+
+# Boxplot with significance test
+ggplot(clean_data_no_influential, aes(x = wd_wend, y = outage_perc)) +
+  geom_boxplot() +
+  geom_jitter(width = 0.2, alpha = 0.6) +
+  labs(title = paste("Outage Percentage by Weekday for", department, "at", station), 
+       x = "", 
+       y = "Percentage Outage") +
+  theme_minimal() +
+  geom_signif(comparisons = comparisons_list,
+              map_signif_level = TRUE,
+              textsize = 3,
+              y_position = y_positions) +  # Set jittered y positions for significance
+  geom_hline(aes(yintercept = 24.3, color = "Budge Outage"), linetype = "dashed") +
+  scale_color_manual(name = NULL, values = c("Budge Outage" = "red")) +  # Remove legend title
+  scale_y_continuous(breaks = seq(0, max(clean_data_no_influential$outage_perc, na.rm = TRUE) + 5, by = 5)) +  # Set y-axis breaks by 5
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.key.size = unit(0.5, "cm"),  # Adjust legend key size
+        legend.text = element_text(size = 7))  # Optional: adjust legend text size
+
+
+# Save the figure
+ggsave(here(paste0("figures/boxplot_", department, "_at_", station, "_weekend_week.jpeg")))
+
+
+
+```
